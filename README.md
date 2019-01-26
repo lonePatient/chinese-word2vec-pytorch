@@ -30,7 +30,7 @@ word2vec implementation for skip-gram in pytorch
 
 ### results
 
-大概6次epochs之后，可得到一下结果:
+大概6次epochs之后，可得到以下结果:
 
 | 目标词  |   Top10    | 目标词  |    Top10    |
 | :--: | :--------: | :--: | :---------: |
