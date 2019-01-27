@@ -25,7 +25,7 @@ word2vec implementation for skip-gram in pytorch
 ```
 ### run
 
-1. 修改｀config｀目录中的`word2vec_config.py`的配置信息
+1. 修改`config`目录中的`word2vec_config.py`的配置信息
 2. 运行命令`python train_word2vec.py`
 
 ### results
