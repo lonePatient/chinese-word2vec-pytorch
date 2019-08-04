@@ -1,6 +1,8 @@
-word2vec implementation for skip-gram in pytorch
+### word2vec implementation for skip-gram in pytorch
 
 本repo包含了使用pytorch实现skip-gram版本的word2vec词向量模型。
+
+备注: 该版本以batch为1进行训练，速度较慢。
 
 ### 目录结构
 
@@ -23,12 +25,14 @@ word2vec implementation for skip-gram in pytorch
 ├── train_gensim_word2vec.py
 ├── train_word2vec.py
 ```
-### run
+### 案例
 
-1. 修改`config`目录中的`word2vec_config.py`的配置信息
-2. 运行命令`python train_word2vec.py`
+1. 首先下载数据集，可以从[百度网盘](https://pan.baidu.com/s/1FcrAc3w48dG8Gixv9E6EQw){提取码：7fyf},并放入`pyw2v/dataset/raw`文件夹中
 
-### results
+2. 修改config文件夹中对应的数据路径配置
+2. 运行`python train_word2vec.py`进行word2vec模型训练
+
+### 实验结果
 
 大概6次epochs之后，可得到以下结果:
 

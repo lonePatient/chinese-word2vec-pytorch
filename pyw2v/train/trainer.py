@@ -1,10 +1,7 @@
-#encoding:utf-8
-import time
-import numpy as np
 import torch
-from tqdm import tqdm
+from ..common.tools import AverageMeter
 from ..callback.progressbar import ProgressBar
-from .train_utils import model_device
+from ..common.tools import model_device
 
 # 训练包装器
 class Trainer(object):
@@ -15,13 +12,11 @@ class Trainer(object):
                  vocab,
                  model_save_path,
                  vector_save_path,
-                 train_data,
                  optimizer,
                  lr_scheduler,
                  training_monitor,
                  verbose = 1):
         self.model            = model
-        self.train_data       = train_data
         self.epochs           = epochs
         self.optimizer        = optimizer
         self.logger           = logger
@@ -32,22 +27,11 @@ class Trainer(object):
         self.vocab            = vocab
         self.vector_save_path = vector_save_path
         self.model_save_path  = model_save_path
-        self._reset()
 
-    def _reset(self):
-        self.progressbar       = ProgressBar(loss_name='loss',n_batch=len(self.vocab)* 50 )
-        self.model,self.device = model_device(n_gpu=self.n_gpu,model = self.model,logger = self.logger)
+        self.model, self.device = model_device(n_gpu, model=self.model)
         self.start_epoch = 1
 
-    def summary(self):
-        model_parameters = filter(lambda p: p.requires_grad, self.model.parameters())
-        params = sum([np.prod(p.size()) for p in model_parameters])
-        # 总的模型参数量
-        self.logger.info('trainable parameters: {:4}M'.format(params / 1000 / 1000))
-        # 模型结构
-        self.logger.info(self.model)
 
-    # 保存模型信息
     def _save_info(self):
         state = {
             'epoch': self.epochs,
@@ -56,7 +40,6 @@ class Trainer(object):
         }
         return state
 
-    # 保存模型以及词向量
     def save(self):
         id_word = {value:key for key ,value in self.vocab.items()}
         state = self._save_info()
@@ -68,7 +51,9 @@ class Trainer(object):
                 vector = metrix.numpy()
             else:
                 vector = metrix.cpu().numpy()
-            for i in tqdm(range(len(vector)),desc = 'save vector'):
+            for i in range(len(vector)):
+                if i % 1000 == 0:
+                    print(f'saving {i} word vector')
                 word  = id_word[i]
                 s_vec = vector[i]
                 s_vec = [str(s) for s in s_vec.tolist()]
@@ -76,36 +61,40 @@ class Trainer(object):
                 f.write(write_line)
 
     # epoch训练
-    def _train_epoch(self):
+    def train_epoch(self,train_data):
+        pbar = ProgressBar(n_batch=len(train_data))
+        train_loss = AverageMeter()
         self.model.train()
-        i = 0
-        if self.device == 'cpu':
-            input_type = torch.LongTensor
-        else:
-            input_type = torch.cuda.LongTensor
-        train_examples = self.train_data.make_iter()
-        for pos_u,pos_v,neg_u,neg_v in train_examples:
-            start = time.time()
-            pos_u = input_type(pos_u).to(self.device)
-            pos_v = input_type(pos_v).to(self.device)
-            neg_u = input_type(neg_u).to(self.device)
-            neg_v = input_type(neg_v).to(self.device)
+        assert self.model.training
+        train_examples = train_data.make_iter()
+        for step,batch in enumerate(train_examples):
+            batch = tuple(t.to(self.device) for t in batch)
+            pos_u, pos_v, neg_u, neg_v = batch
             self.optimizer.zero_grad()
             loss = self.model(pos_u, pos_v, neg_u, neg_v)
             loss.backward()
             self.optimizer.step()
-            i += 1
-            if self.verbose >= 1:
-                self.progressbar.step(batch_idx=i,loss =loss.item(),
-                                      use_time=time.time() - start)
-    #训练
-    def train(self):
+            pbar.batch_step(batch_idx=step, info={'loss': loss.item()})
+            train_loss.update(loss.item(),n = 1)
+        print(" ")
+        result = {'loss':train_loss.avg}
+        if 'cuda' in str(self.device):
+            torch.cuda.empty_cache()
+        return result
+
+    def train(self,train_data):
         for epoch in range(self.start_epoch,self.start_epoch+self.epochs):
-            print("----------------- training start -----------------------")
-            print("Epoch {i}/{epochs}......".format(i=epoch, epochs=self.start_epoch+self.epochs -1))
-            self._train_epoch()
-            if self.lr_scheduler:
-                self.lr_scheduler.step(epoch)
+            print(f"Epoch {epoch}/{self.start_epoch + self.epochs - 1}")
+            train_log = self.train_epoch(train_data)
+
+            show_info = f'\nEpoch: {epoch} - ' + "-".join([f' {key}: {value:.4f} ' for key, value in train_log.items()])
+            self.logger.info(show_info)
+
+            if hasattr(self.lr_scheduler, 'epoch_step'):
+                self.lr_scheduler.epoch_step(epoch)
+
+            if self.training_monitor:
+                self.training_monitor.epoch_step(train_log)
             self.save()
 
 

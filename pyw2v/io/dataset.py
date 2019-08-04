@@ -1,10 +1,10 @@
 #encoding:utf-8
 import math
 import random
-from tqdm import tqdm
+import torch
 import numpy as np
 from collections import Counter
-from ..utils.utils import pkl_write
+from ..common.tools import save_pickle
 import operator
 
 class DataLoader(object):
@@ -16,14 +16,12 @@ class DataLoader(object):
                  negative_num,
                  vocab_size,
                  vocab_path,
-                 batch_size,
                  shuffle,
                  seed,
                  sample
                  ):
 
         self.window_size  = window_size
-        self.skip_header  = skip_header
         self.negative_num = negative_num
         self.min_freq     = min_freq
         self.shuffle      = shuffle
@@ -33,8 +31,7 @@ class DataLoader(object):
         self.vocab_path   = vocab_path
         self.skip_header  = skip_header
         self.vocab_size   = vocab_size
-        self.batch_size   = batch_size
-        self.random_s     = np.random.RandomState(self.seed)
+        self.random_s     = np.random.RandomState(seed)
         self.build_examples()
         self.build_vocab()
         self.build_negative_sample_table()
@@ -52,8 +49,9 @@ class DataLoader(object):
     # 读取数据，并进行预处理
     def build_examples(self):
         self.examples = []
+        print('read data and processing')
         with open(self.data_path, 'r') as fr:
-            for i, line in tqdm(enumerate(fr), desc='read data and processing'):
+            for i, line in enumerate(fr):
                 # 数据首行为列名
                 if i == 0 and self.skip_header:
                     continue
@@ -64,7 +62,8 @@ class DataLoader(object):
     # 建立语料库
     def build_vocab(self):
         count = Counter()
-        for words in tqdm(self.examples,desc = 'build vocab'):
+        print("build vocab")
+        for words in self.examples:
             count.update(words)
         count = {k: v for k, v in count.items()}
         count = sorted(count.items(), key=operator.itemgetter(1),reverse=True)
@@ -75,7 +74,8 @@ class DataLoader(object):
         word2id = {k: (i,v) for i,(k, v) in zip(range(0, len(all_words)),all_words)}
         self.word_frequency = {tu[0]: tu[1] for word, tu in word2id.items()}
         self.vocab = {word: tu[0] for word, tu in word2id.items()}
-        pkl_write(data = word2id,filename=self.vocab_path)
+        print(f"vocab size: {len(self.vocab)}")
+        save_pickle(data = word2id,file_path=self.vocab_path)
 
     # 构建负样本
     def build_negative_sample_table(self):
@@ -133,5 +133,11 @@ class DataLoader(object):
                 pos_u = [w] * len(pos_v)
                 neg_u = [c for c in pos_v for _ in range(self.negative_num)]
                 neg_v = [v for u in pos_u for v in self.get_neg_word(u)]
-                yield pos_u,pos_v,neg_u,neg_v
+                yield (torch.tensor(pos_u,dtype=torch.long),
+                       torch.tensor(pos_v,dtype=torch.long),
+                       torch.tensor(neg_u,dtype=torch.long),
+                       torch.tensor(neg_v,dtype=torch.long))
+
+    def __len__(self):
+        return len([w for ex in self.train_examples for w in ex if len(ex) >=2])
 

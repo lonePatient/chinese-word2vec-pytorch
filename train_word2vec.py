@@ -1,91 +1,83 @@
-#encoding:utf-8
+# encoding:utf-8
 import argparse
 import torch
 import warnings
 from torch import optim
-from pyword2vec.train.trainer import Trainer
-from pyword2vec.io.dataset import DataLoader
-from pyword2vec.model.nn.skip_gram import SkipGram
-from pyword2vec.utils.logginger import init_logger
-from pyword2vec.utils.utils import seed_everything
-from pyword2vec.config.word2vec_config import configs as config
-from pyword2vec.callback.lrscheduler import StepLr
-from pyword2vec.callback.trainingmonitor import TrainingMonitor
+from pyw2v.train.trainer import Trainer
+from pyw2v.io.dataset import DataLoader
+from pyw2v.model.nn.skip_gram import SkipGram
+from pyw2v.common.tools import init_logger, logger
+from pyw2v.common.tools import seed_everything
+from pyw2v.config.basic_config import configs as config
+from pyw2v.callback.lrscheduler import StepLR
+from pyw2v.callback.trainingmonitor import TrainingMonitor
+
 warnings.filterwarnings("ignore")
 
-# 主函数
-def main():
-    arch = 'word2vec'
-    logger = init_logger(log_name=arch, log_dir=config['log_dir'])
-    logger.info("seed is %d"%args['seed'])
-    seed_everything(seed = args['seed'])
 
-    #**************************** 加载数据集 ****************************
+def run(args):
+    # **************************** 加载数据集 ****************************
     logger.info('starting load train data from disk')
-    train_dataset   = DataLoader(skip_header  = False,
-                                    negative_num = config['negative_sample_num'],
-                                    batch_size   = config['batch_size'],
-                                    window_size  = config['window_size'],
-                                    data_path    = config['data_path'],
-                                    vocab_path   = config['vocab_path'],
-                                    vocab_size   = config['vocab_size'],
-                                    min_freq     = config['min_freq'],
-                                    shuffle      = True,
-                                    seed         = args['seed'],
-                                    sample       = config['sample']
-                                    )
+    train_dataset = DataLoader(skip_header=False,
+                               negative_num=args.negative_sample_num,
+                               window_size=args.window_size,
+                               data_path=config['data_path'],
+                               vocab_path=config['vocab_path'],
+                               vocab_size=args.vocab_size,
+                               min_freq=args.min_freq,
+                               shuffle=True,
+                               seed=args.seed,
+                               sample=args.sample)
 
     # **************************** 模型和优化器 ***********************
     logger.info("initializing model")
-    model = SkipGram(embedding_dim = config['embedding_dim'],vocab_size = len(train_dataset.vocab))
-    optimizer = optim.SGD(params = model.parameters(),lr = config['learning_rate'])
+    model = SkipGram(embedding_dim=args.embedd_dim, vocab_size=len(train_dataset.vocab))
+    optimizer = optim.SGD(params=model.parameters(), lr=args.learning_rate)
 
     # **************************** callbacks ***********************
     logger.info("initializing callbacks")
-    # 监控训练过程
-    train_monitor = TrainingMonitor(fig_dir  = config['figure_dir'],
-                                    json_dir = config['log_dir'],
-                                    arch     = arch)
-    # 学习率机制
-    lr_scheduler = StepLr(optimizer=optimizer,
-                          init_lr  = config['learning_rate'],
-                          epochs   = config['epochs'])
+    train_monitor = TrainingMonitor(file_dir=config['figure_dir'], arch=args.model)
+    lr_scheduler = StepLR(optimizer=optimizer,lr=args.learning_rate, epochs=args.epochs)
 
     # **************************** training model ***********************
     logger.info('training model....')
-    trainer = Trainer(model            = model,
-                      vocab            = train_dataset.vocab,
-                      train_data       = train_dataset,
-                      optimizer        = optimizer,
-                      epochs           = config['epochs'],
-                      logger           = logger,
-                      training_monitor = train_monitor,
-                      lr_scheduler     = lr_scheduler,
-                      n_gpu            = config['n_gpus'],
-                      model_save_path  = config['model_save_path'],
-                      vector_save_path = config['pytorch_embedding_path']
+    trainer = Trainer(model=model,
+                      vocab=train_dataset.vocab,
+                      optimizer=optimizer,
+                      epochs=args.epochs,
+                      logger=logger,
+                      training_monitor=train_monitor,
+                      lr_scheduler=lr_scheduler,
+                      n_gpu=args.n_gpus,
+                      model_save_path=config['model_save_path'],
+                      vector_save_path=config['pytorch_embedding_path']
                       )
-    # 查看模型结构
-    trainer.summary()
-    # 拟合模型
-    trainer.train()
-    # 释放显存
-    if len(config['n_gpus']) > 0:
-        torch.cuda.empty_cache()
+    trainer.train(train_data=train_dataset)
+
+
+def main():
+    parser = argparse.ArgumentParser(description='PyTorch Word2Vec model training')
+    parser.add_argument("--model", type=str, default='skip_gram')
+    parser.add_argument("--task", type=str, default='training word vector')
+    parser.add_argument('--seed', default=2018, type=int,
+                        help='Seed for initializing training.')
+    parser.add_argument('--resume', default=False, type=bool,
+                        help='Choose whether resume checkpoint model')
+    parser.add_argument('--embedd_dim', default=300, type=int)
+    parser.add_argument('--epochs', default=6, type=int)
+    parser.add_argument('--window_size', default=5, type=int)
+    parser.add_argument('--n_gpus', default='0', type=str)
+    parser.add_argument('--min_freq', default=5, type=int)
+    parser.add_argument('--sample', default=1e-3, type=float)
+    parser.add_argument('--negative_sample_num', default=5, type=int)
+    parser.add_argument('--learning_rate', default=0.025, type=float)
+    parser.add_argument('--weight_decay', default=5e-4, type=float)
+    parser.add_argument('--vocab_size', default=30000000, type=int)
+    args = parser.parse_args()
+    init_logger(log_file=config['log_dir'] / (args.model + ".log"))
+    logger.info(f"seed is {args.seed}")
+    seed_everything(seed=args.seed)
+    run(args)
 
 if __name__ == '__main__':
-    ap = argparse.ArgumentParser(description='PyTorch model training')
-    ap.add_argument('-s',
-                    '--seed',
-                    default=2018,
-                    type = int,
-                    help = 'Seed for initializing training.')
-
-    ap.add_argument('-r',
-                    '--resume',
-                    default = False,
-                    type = bool,
-                    help = 'Choose whether resume checkpoint model')
-    args = vars(ap.parse_args())
     main()
-
